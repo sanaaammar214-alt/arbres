@@ -1,0 +1,402 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+/* ===========================
+   STRUCTURES
+   =========================== */
+
+/* Noeud pour ABR */
+typedef struct NoeudABR {
+    int data;
+    struct NoeudABR *fg;
+    struct NoeudABR *fd;
+} NoeudABR;
+
+/* Noeud pour AVL */
+typedef struct NoeudAVL {
+    int data;
+    struct NoeudAVL *fg;
+    struct NoeudAVL *fd;
+    int hauteur;
+} NoeudAVL;
+
+/* ===========================
+   FONCTIONS UTILITAIRES ABR
+   =========================== */
+
+NoeudABR* creerNoeudABR(int val) {
+    NoeudABR n = (NoeudABR)malloc(sizeof(NoeudABR));
+    if (!n) { perror("malloc"); exit(EXIT_FAILURE); }
+    n->data = val;
+    n->fg = n->fd = NULL;
+    return n;
+}
+
+/* insertion récursive ABR */
+NoeudABR* abr_inserer(NoeudABR *root, int val) {
+    if (root == NULL) return creerNoeudABR(val);
+
+    if (val < root->data)
+        root->fg = abr_inserer(root->fg, val);
+    else if (val > root->data)
+        root->fd = abr_inserer(root->fd, val);
+    /* si val == root->data : on ignore (pas de doublons) */
+    return root;
+}
+
+/* recherche ABR */
+NoeudABR* abr_search(NoeudABR *root, int val) {
+    if (!root) return NULL;
+    if (val == root->data) return root;
+    if (val < root->data) return abr_search(root->fg, val);
+    return abr_search(root->fd, val);
+}
+
+/* min / max ABR */
+NoeudABR* abr_min(NoeudABR *root) {
+    if (!root) return NULL;
+    while (root->fg) root = root->fg;
+    return root;
+}
+
+NoeudABR* abr_max(NoeudABR *root) {
+    if (!root) return NULL;
+    while (root->fd) root = root->fd;
+    return root;
+}
+
+/* suppression ABR (retourne nouvelle racine du sous-arbre) */
+NoeudABR* abr_supprimer(NoeudABR *root, int val) {
+    if (!root) return NULL;
+
+    if (val < root->data) {
+        root->fg = abr_supprimer(root->fg, val);
+    } else if (val > root->data) {
+        root->fd = abr_supprimer(root->fd, val);
+    } else {
+        /* trouvé */
+        if (!root->fg) {
+            NoeudABR *tmp = root->fd;
+            free(root);
+            return tmp;
+        } else if (!root->fd) {
+            NoeudABR *tmp = root->fg;
+            free(root);
+            return tmp;
+        } else {
+            /* deux enfants : successeur (min du sous-arbre droit) */
+            NoeudABR *succ = abr_min(root->fd);
+            root->data = succ->data;
+            root->fd = abr_supprimer(root->fd, succ->data);
+        }
+    }
+    return root;
+}
+
+/* Parcours ABR : prefixe / infixe / postfixe */
+void abr_prefixe(NoeudABR *root) {
+    if (!root) return;
+    printf("%d ", root->data);
+    abr_prefixe(root->fg);
+    abr_prefixe(root->fd);
+}
+void abr_infixe(NoeudABR *root) {
+    if (!root) return;
+    abr_infixe(root->fg);
+    printf("%d ", root->data);
+    abr_infixe(root->fd);
+}
+void abr_postfixe(NoeudABR *root) {
+    if (!root) return;
+    abr_postfixe(root->fg);
+    abr_postfixe(root->fd);
+    printf("%d ", root->data);
+}
+
+/* ===========================
+   FILE (QUEUE) pour BFS (ABR)
+   =========================== */
+
+typedef struct Cell {
+    NoeudABR *adr;
+    struct Cell *suiv;
+} Cell;
+
+typedef struct File {
+    Cell *tete;
+    Cell *queue;
+} File;
+
+File* file_init() {
+    File F = (File)malloc(sizeof(File));
+    if (!F) { perror("malloc"); exit(EXIT_FAILURE); }
+    F->tete = F->queue = NULL;
+    return F;
+}
+
+void file_enfiler(File *F, NoeudABR *n) {
+    if (!F || !n) return;
+    Cell c = (Cell)malloc(sizeof(Cell));
+    if (!c) { perror("malloc"); exit(EXIT_FAILURE); }
+    c->adr = n;
+    c->suiv = NULL;
+    if (F->queue == NULL) {
+        F->tete = F->queue = c;
+    } else {
+        F->queue->suiv = c;
+        F->queue = c;
+    }
+}
+
+NoeudABR* file_defiler(File *F) {
+    if (!F || F->tete == NULL) return NULL;
+    Cell *c = F->tete;
+    NoeudABR *res = c->adr;
+    F->tete = c->suiv;
+    if (F->tete == NULL) F->queue = NULL;
+    free(c);
+    return res;
+}
+
+int file_vide(File *F) {
+    return (F->tete == NULL);
+}
+
+/* Parcours en largeur (BFS) pour ABR */
+void abr_bfs(NoeudABR *root) {
+    if (!root) return;
+    File *F = file_init();
+    file_enfiler(F, root);
+    while (!file_vide(F)) {
+        NoeudABR *cur = file_defiler(F);
+        printf("%d ", cur->data);
+        if (cur->fg) file_enfiler(F, cur->fg);
+        if (cur->fd) file_enfiler(F, cur->fd);
+    }
+    /* libération simple de la structure File */
+    free(F);
+}
+
+/* ===========================
+   FONCTIONS AVL
+   =========================== */
+
+int hauteurAVL(NoeudAVL *n) {
+    if (!n) return 0;
+    return n->hauteur;
+}
+
+int max_int(int a, int b) { return (a > b) ? a : b; }
+
+NoeudAVL* creerNoeudAVL(int val) {
+    NoeudAVL n = (NoeudAVL)malloc(sizeof(NoeudAVL));
+    if (!n) { perror("malloc"); exit(EXIT_FAILURE); }
+    n->data = val;
+    n->fg = n->fd = NULL;
+    n->hauteur = 1; /* feuille */
+    return n;
+}
+
+NoeudAVL* rotationDroiteAVL(NoeudAVL *y) {
+    NoeudAVL *x = y->fg;
+    NoeudAVL *T2 = x->fd;
+
+    /* rotation */
+    x->fd = y;
+    y->fg = T2;
+
+    /* mettre à jour hauteurs */
+    y->hauteur = 1 + max_int(hauteurAVL(y->fg), hauteurAVL(y->fd));
+    x->hauteur = 1 + max_int(hauteurAVL(x->fg), hauteurAVL(x->fd));
+
+    return x; /* nouvelle racine */
+}
+
+NoeudAVL* rotationGaucheAVL(NoeudAVL *x) {
+    NoeudAVL *y = x->fd;
+    NoeudAVL *T2 = y->fg;
+
+    /* rotation */
+    y->fg = x;
+    x->fd = T2;
+
+    /* mettre à jour hauteurs */
+    x->hauteur = 1 + max_int(hauteurAVL(x->fg), hauteurAVL(x->fd));
+    y->hauteur = 1 + max_int(hauteurAVL(y->fg), hauteurAVL(y->fd));
+
+    return y; /* nouvelle racine */
+}
+
+int getBalance(NoeudAVL *n) {
+    if (!n) return 0;
+    return hauteurAVL(n->fg) - hauteurAVL(n->fd);
+}
+
+/* insertion AVL recursive */
+NoeudAVL* avl_inserer(NoeudAVL *root, int val) {
+    if (!root) return creerNoeudAVL(val);
+
+    if (val < root->data)
+        root->fg = avl_inserer(root->fg, val);
+    else if (val > root->data)
+        root->fd = avl_inserer(root->fd, val);
+    else /* valeurs identiques non autorisées */
+        return root;
+
+    /* mettre à jour hauteur */
+    root->hauteur = 1 + max_int(hauteurAVL(root->fg), hauteurAVL(root->fd));
+
+    int balance = getBalance(root);
+
+    /* cas LL */
+    if (balance > 1 && val < root->fg->data)
+        return rotationDroiteAVL(root);
+
+    /* cas RR */
+    if (balance < -1 && val > root->fd->data)
+        return rotationGaucheAVL(root);
+
+    /* cas LR */
+    if (balance > 1 && val > root->fg->data) {
+        root->fg = rotationGaucheAVL(root->fg);
+        return rotationDroiteAVL(root);
+    }
+
+    /* cas RL */
+    if (balance < -1 && val < root->fd->data) {
+        root->fd = rotationDroiteAVL(root->fd);
+        return rotationGaucheAVL(root);
+    }
+
+    return root;
+}
+
+/* parcours InOrder AVL */
+void avl_inorder(NoeudAVL *root) {
+    if (!root) return;
+    avl_inorder(root->fg);
+    printf("%d ", root->data);
+    avl_inorder(root->fd);
+}
+
+/* ===========================
+   LIBERATION D'ARBRES (optionnelle mais propre)
+   =========================== */
+
+void freeABR(NoeudABR *root) {
+    if (!root) return;
+    freeABR(root->fg);
+    freeABR(root->fd);
+    free(root);
+}
+
+void freeAVL(NoeudAVL *root) {
+    if (!root) return;
+    freeAVL(root->fg);
+    freeAVL(root->fd);
+    free(root);
+}
+
+/* ===========================
+   MENU
+   =========================== */
+
+void afficher_menu() {
+    printf("\n===== MENU =====\n");
+    printf("-- ABR (Arbre Binaire de Recherche) --\n");
+    printf("1  : Inserer dans ABR\n");
+    printf("2  : Parcourir ABR (Prefixe / Infixe / Postfixe / Largeur)\n");
+    printf("3  : Rechercher dans ABR\n");
+    printf("4  : Min / Max ABR\n");
+    printf("5  : Supprimer d'ABR\n");
+    printf("\n-- AVL (Arbre Equilibre) --\n");
+    printf("6  : Inserer dans AVL\n");
+    printf("7  : Afficher AVL (InOrder)\n");
+    printf("\n0  : Quitter\n");
+    printf("=================\n");
+    printf("Choix : ");
+}
+
+int main() {
+    NoeudABR *abr = NULL;
+    NoeudAVL *avl = NULL;
+    int choix = -1;
+    int val;
+
+
+    while (1) {
+        afficher_menu();
+        if (scanf("%d", &choix) != 1) {
+            printf("Lecture invalide. Fermeture.\n");
+            break;
+        }
+
+        switch (choix) {
+            case 1:
+                printf("Valeur a inserer dans ABR : ");
+                if (scanf("%d", &val) == 1) {
+                    abr = abr_inserer(abr, val);
+                    printf("Insertion ABR faite.\n");
+                } else {
+                    printf("Lecture invalide.\n");
+                }
+                break;
+
+            case 2:
+                if (!abr) { printf("ABR vide.\n"); break; }
+                printf("Prefixe : "); abr_prefixe(abr); printf("\n");
+                printf("Infixe  : "); abr_infixe(abr); printf("\n");
+                printf("Postfixe: "); abr_postfixe(abr); printf("\n");
+                printf("Largeur : "); abr_bfs(abr); printf("\n");
+                break;
+
+            case 3:
+                printf("Valeur a rechercher dans ABR : ");
+                if (scanf("%d", &val) == 1) {
+                    NoeudABR *res = abr_search(abr, val);
+                    if (res) printf("Trouve : %d\n", res->data);
+                    else printf("Non trouve.\n");
+                } else printf("Lecture invalide.\n");
+                break;
+
+            case 4:
+                if (!abr) { printf("ABR vide.\n"); break; }
+                printf("Min = %d\n", abr_min(abr)->data);
+                printf("Max = %d\n", abr_max(abr)->data);
+                break;
+
+            case 5:
+                printf("Valeur a supprimer dans ABR : ");
+                if (scanf("%d", &val) == 1) {
+                    abr = abr_supprimer(abr, val);
+                    printf("Suppression effectuee (si existait).\n");
+                } else printf("Lecture invalide.\n");
+                break;
+
+            case 6:
+                printf("Valeur a inserer dans AVL : ");
+                if (scanf("%d", &val) == 1) {
+                    avl = avl_inserer(avl, val);
+                    printf("Insertion AVL faite.\n");
+                } else printf("Lecture invalide.\n");
+                break;
+
+            case 7:
+                if (!avl) { printf("AVL vide.\n"); break; }
+                printf("AVL (InOrder) : "); avl_inorder(avl); printf("\n");
+                break;
+
+            case 0:
+                /* libération mémoire avant sortie */
+                freeABR(abr);
+                freeAVL(avl);
+                printf("Au revoir.\n");
+                return 0;
+
+            default:
+                printf("Choix invalide.\n");
+        }
+    }
+
+    return 0;
+}
